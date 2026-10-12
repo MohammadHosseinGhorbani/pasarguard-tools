@@ -1,0 +1,22 @@
+services:
+  backend:
+    build: ./backend
+    container_name: pg-tools-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: sqlite:///./data/app.db
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+
+  frontend:
+    build: ./frontend
+    container_name: pg-tools-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend

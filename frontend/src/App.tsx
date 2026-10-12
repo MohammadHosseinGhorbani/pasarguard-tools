@@ -263,11 +263,21 @@ export default function App() {
         </header>
         <div className="content">
           <TabBoundary tab={tab}>
-            {tab === 'home' && <HomeSection />}
-            {tab === 'panel' && <PanelSection />}
-            {tab === 'tunnel' && <TunnelSection />}
-            {tab === 'cloudflare' && <CloudflareSection />}
-            {tab === 'settings' && <SettingsSection />}
+            <div hidden={tab !== 'home'}>
+              <HomeSection />
+            </div>
+            <div hidden={tab !== 'panel'}>
+              <PanelSection />
+            </div>
+            <div hidden={tab !== 'tunnel'}>
+              <TunnelSection />
+            </div>
+            <div hidden={tab !== 'cloudflare'}>
+              <CloudflareSection />
+            </div>
+            <div hidden={tab !== 'settings'}>
+              <SettingsSection />
+            </div>
           </TabBoundary>
           <Footer />
         </div>

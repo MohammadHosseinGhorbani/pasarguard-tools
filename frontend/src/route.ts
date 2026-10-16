@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 export const DEFAULT_SUB: Record<string, string> = {
   home: '',
   panel: 'nodes',
+  proton: 'configs',
   tunnel: 'tunnel',
   cloudflare: 'zones',
   settings: 'panels',

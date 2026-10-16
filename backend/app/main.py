@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import auth, bp, cloudflare, hosts, inbounds, nodes, outbounds, panels, servers, tunnel
+from .routers import auth, bp, cloudflare, hosts, inbounds, nodes, outbounds, panels, proton, servers, tunnel
 
 
 def create_app() -> FastAPI:
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(cloudflare.router)
     app.include_router(inbounds.router)
     app.include_router(outbounds.router)
+    app.include_router(proton.router)
     app.include_router(hosts.router)
     app.include_router(tunnel.router)
     app.include_router(bp.router)

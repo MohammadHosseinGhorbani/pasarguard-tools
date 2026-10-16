@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import {
   Panel,
   PanelNode,
+  ProtonConfig,
   WgOutbound,
   errMsg,
   listPanels,
+  listProtonConfigs,
   loadOutbounds,
   loadPanelNodes,
   saveOutbounds,
 } from '../api';
+import Modal from '../components/Modal';
 import ResultBlock from '../components/ResultBlock';
 
 interface Row {
@@ -40,6 +43,12 @@ export default function OutboundsPage() {
   const [error, setError] = useState('');
   const [result, setResult] = useState('');
   const [resultRaw, setResultRaw] = useState<unknown>(null);
+
+  // "Pick from Proton VPN" picker.
+  const [pickKey, setPickKey] = useState<number | null>(null);
+  const [protonConfigs, setProtonConfigs] = useState<ProtonConfig[]>([]);
+  const [pickLoading, setPickLoading] = useState(false);
+  const [pickError, setPickError] = useState('');
 
   async function loadPanels() {
     setLoading(true);
@@ -118,6 +127,33 @@ export default function OutboundsPage() {
 
   function addRow() {
     setRows((prev) => [...prev, { key: nextKey++, original_tag: '', tag: '', conf: '', current: '' }]);
+  }
+
+  async function openProtonPicker(key: number) {
+    setPickKey(key);
+    setPickLoading(true);
+    setPickError('');
+    try {
+      const r = await listProtonConfigs();
+      setProtonConfigs(r.configs ?? []);
+    } catch (e) {
+      setProtonConfigs([]);
+      setPickError(errMsg(e));
+    } finally {
+      setPickLoading(false);
+    }
+  }
+
+  function applyProtonConfig(c: ProtonConfig) {
+    if (pickKey === null) return;
+    setRows((prev) =>
+      prev.map((r) =>
+        r.key === pickKey
+          ? { ...r, conf: c.conf, tag: r.tag.trim() ? r.tag : c.outbound_tag }
+          : r,
+      ),
+    );
+    setPickKey(null);
   }
 
   async function save() {
@@ -250,6 +286,9 @@ export default function OutboundsPage() {
                 </label>
               </div>
               <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end' }}>
+                <button className="btn small" disabled={busy} onClick={() => openProtonPicker(r.key)}>
+                  Pick from Proton VPN
+                </button>
                 <button className="btn small danger" disabled={busy} onClick={() => removeRow(r.key)}>
                   Delete
                 </button>
@@ -271,6 +310,56 @@ export default function OutboundsPage() {
           <h3>Result</h3>
           <ResultBlock text={result} raw={resultRaw} />
         </div>
+      )}
+
+      {pickKey !== null && (
+        <Modal onClose={() => setPickKey(null)} width={720}>
+          <h3 style={{ marginTop: 0 }}>Pick from Proton VPN</h3>
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Fills this outbound's WireGuard config from a saved Proton config (the name is
+            kept if you already typed one). Nothing is sent until you press Save.
+          </div>
+          {pickLoading && <div className="spinner">Loading…</div>}
+          {pickError && <div className="alert error">{pickError}</div>}
+          {!pickLoading && !pickError && protonConfigs.length === 0 && (
+            <div className="muted">
+              No Proton configs yet. Create some in the <b>Proton VPN</b> section, then try again.
+            </div>
+          )}
+          {protonConfigs.length > 0 && (
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Country</th>
+                  <th>Server</th>
+                  <th>Endpoint</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {protonConfigs.map((c) => (
+                  <tr key={c.id}>
+                    <td className="mono">{c.name}</td>
+                    <td className="mono">{c.country || '—'}</td>
+                    <td className="mono">{c.server_name || '—'}</td>
+                    <td className="mono">{c.entry_ip ? `${c.entry_ip}:${c.port}` : '—'}</td>
+                    <td>
+                      <button className="btn small primary" onClick={() => applyProtonConfig(c)}>
+                        Use
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={() => setPickKey(null)}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

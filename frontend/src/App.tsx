@@ -6,15 +6,17 @@ import Footer from './components/Footer';
 import HomeSection from './sections/HomeSection';
 import Modal from './components/Modal';
 import PanelSection from './sections/PanelSection';
+import ProtonSection from './sections/ProtonSection';
 import { DEFAULT_SUB, parseHash } from './route';
 import SettingsSection from './sections/SettingsSection';
 import TunnelSection from './sections/TunnelSection';
 
-type Tab = 'home' | 'panel' | 'tunnel' | 'cloudflare' | 'settings';
+type Tab = 'home' | 'panel' | 'proton' | 'tunnel' | 'cloudflare' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'home', label: 'Home' },
   { id: 'panel', label: 'Panel' },
+  { id: 'proton', label: 'Proton VPN' },
   { id: 'tunnel', label: 'Tunnel' },
   { id: 'cloudflare', label: 'Cloudflare' },
   { id: 'settings', label: 'Settings' },
@@ -268,6 +270,9 @@ export default function App() {
             </div>
             <div hidden={tab !== 'panel'}>
               <PanelSection />
+            </div>
+            <div hidden={tab !== 'proton'}>
+              <ProtonSection />
             </div>
             <div hidden={tab !== 'tunnel'}>
               <TunnelSection />

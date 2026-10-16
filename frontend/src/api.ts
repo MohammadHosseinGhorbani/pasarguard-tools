@@ -682,6 +682,109 @@ export async function saveRoutingAssignment(payload: {
   return apiFetch('/api/outbounds/routing', { method: 'PUT', body: payload });
 }
 
+// ---------- Proton VPN ----------
+
+export interface ProtonStatus {
+  username: string;
+  has_password: boolean;
+  app_version: string;
+  proxy: string;
+  logged_in: boolean;
+  mode: 'refresh' | 'cookie' | 'none' | string;
+  uid: string;
+  expires_at: number;
+  seconds_left: number;
+  days_left: number | null;
+}
+
+export interface ProtonConfig {
+  id: number;
+  name: string;
+  country: string;
+  server_name: string;
+  entry_ip: string;
+  port: number;
+  address: string;
+  dns: string;
+  serial: string;
+  expires_at: number;
+  created_at: number;
+  outbound_tag: string;
+  conf: string;
+}
+
+export interface ProtonServer {
+  name: string;
+  exit_country: string;
+  entry_country: string;
+  load: number | null;
+  score: number | null;
+  status: number | null;
+  entry_ip: string;
+}
+
+export async function getProtonStatus(): Promise<ProtonStatus> {
+  return apiFetch<ProtonStatus>('/api/proton/settings');
+}
+
+export async function saveProtonSettings(payload: {
+  username?: string;
+  password?: string;
+  app_version?: string;
+  proxy?: string;
+}): Promise<ProtonStatus> {
+  return apiFetch<ProtonStatus>('/api/proton/settings', { method: 'PUT', body: payload });
+}
+
+export async function protonLogin(payload: {
+  username?: string;
+  password?: string;
+  totp?: string;
+} = {}): Promise<ProtonStatus> {
+  return apiFetch<ProtonStatus>('/api/proton/login', { method: 'POST', body: payload });
+}
+
+export async function protonLogout(): Promise<ProtonStatus> {
+  return apiFetch<ProtonStatus>('/api/proton/logout', { method: 'POST' });
+}
+
+export async function clearProtonAccount(): Promise<unknown> {
+  return apiFetch('/api/proton/account', { method: 'DELETE' });
+}
+
+export async function listProtonServers(
+  tier = 0,
+  countries = '',
+  limit = 0,
+): Promise<{ servers: ProtonServer[]; tier: number }> {
+  const q = new URLSearchParams({ tier: String(tier), countries, limit: String(limit) });
+  return apiFetch(`/api/proton/servers?${q.toString()}`);
+}
+
+export async function listProtonConfigs(): Promise<{ configs: ProtonConfig[]; logged_in: boolean }> {
+  return apiFetch('/api/proton/configs');
+}
+
+export async function createProtonConfig(payload: {
+  name: string;
+  country?: string;
+  tier?: number;
+}): Promise<{ ok: boolean; config: ProtonConfig; conf: string }> {
+  return apiFetch('/api/proton/configs', { method: 'POST', body: payload });
+}
+
+export async function rotateProtonConfig(payload: {
+  name: string;
+  country?: string;
+  tier?: number;
+}): Promise<{ ok: boolean; config: ProtonConfig; conf: string; notes?: string[] }> {
+  return apiFetch('/api/proton/configs/rotate', { method: 'POST', body: payload });
+}
+
+export async function deleteProtonConfig(name: string): Promise<{ ok: boolean; name: string; notes?: string[] }> {
+  return apiFetch(`/api/proton/configs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
 // ---------- Hosts (subscription hosts per inbound) ----------
 
 export interface PanelHost {

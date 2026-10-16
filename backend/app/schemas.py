@@ -332,6 +332,27 @@ class RoutingSaveIn(BaseModel):
     outbound_tag: str = ""
 
 
+# ---- Proton VPN ----
+class ProtonSettingsIn(BaseModel):
+    username: str = ""
+    password: str = ""
+    app_version: str = ""
+    proxy: str = ""
+
+
+class ProtonLoginIn(BaseModel):
+    # Optional: log in with these credentials and persist them. Empty = use stored ones.
+    username: str = ""
+    password: str = ""
+    totp: str = ""
+
+
+class ProtonConfigIn(BaseModel):
+    name: str
+    country: str = ""
+    tier: int = 0
+
+
 def model_to_dict(obj: Any) -> Any:
     if obj is None:
         return None

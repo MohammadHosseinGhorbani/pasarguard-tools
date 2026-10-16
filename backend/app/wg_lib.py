@@ -35,7 +35,7 @@ def parse_wg_conf(text: str) -> list[dict]:
             if m:
                 pend = m.group(1).strip()
             continue
-        m = re.match(r"^\[(.+)\]$", line)
+        m = re.match(r"^\[(.+)\]$", re.sub(r"\s*[#;].*$", "", line))
         if m:
             kind = m.group(1).strip().lower()
             if kind == "interface":

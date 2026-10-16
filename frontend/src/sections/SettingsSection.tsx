@@ -1,12 +1,13 @@
 import BpPanelsManager from '../components/BpPanelsManager';
 import CfAccountsManager from '../components/CfAccountsManager';
 import PanelsManager from '../components/PanelsManager';
+import ProtonSettings from '../components/ProtonSettings';
 import ServerManager from '../components/ServerManager';
 import { useSub } from '../route';
 
-type Sub = 'panels' | 'iran' | 'kharej' | 'cloudflare' | 'backpack';
+type Sub = 'panels' | 'iran' | 'kharej' | 'cloudflare' | 'backpack' | 'proton';
 
-const SUBS: Sub[] = ['panels', 'iran', 'kharej', 'cloudflare', 'backpack'];
+const SUBS: Sub[] = ['panels', 'iran', 'kharej', 'cloudflare', 'backpack', 'proton'];
 
 export default function SettingsSection() {
   const [sub, setSub] = useSub<Sub>('settings', 'panels', SUBS);
@@ -28,6 +29,9 @@ export default function SettingsSection() {
         <button className={`subtab-btn ${sub === 'backpack' ? 'active' : ''}`} onClick={() => setSub('backpack')}>
           BackPack API
         </button>
+        <button className={`subtab-btn ${sub === 'proton' ? 'active' : ''}`} onClick={() => setSub('proton')}>
+          Proton VPN
+        </button>
       </div>
       {sub === 'panels' && <PanelsManager />}
       {sub === 'iran' && (
@@ -46,6 +50,7 @@ export default function SettingsSection() {
       )}
       {sub === 'cloudflare' && <CfAccountsManager />}
       {sub === 'backpack' && <BpPanelsManager />}
+      {sub === 'proton' && <ProtonSettings />}
     </div>
   );
 }

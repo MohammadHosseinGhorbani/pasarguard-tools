@@ -18,7 +18,16 @@ and dashboard tabs.
   Cloudflare inbounds, replace configs in place, manage subscription hosts,
   delete, and point any inbound at any outbound with the **Outbound** action.
 - *WireGuard outbounds* — batch-edit a core's WireGuard outbounds: rename,
-  paste a standard `.conf` as replacement, delete, add — then **Save** once.
+  paste a standard `.conf` as replacement (or **Pick from Proton VPN**),
+  delete, add — then **Save** once.
+
+**Proton VPN**
+- *Configs* — log in with your Proton username/password (SRP, no browser),
+  then create, rotate and delete WireGuard configs: the best free server per
+  country is picked, a fresh certificate is registered and its `.conf` is
+  stored. Rotate deletes the previous certificate and issues a new one.
+  The saved configs feed **Pick from Proton VPN** in the WireGuard outbounds
+  editor.
 
 **Tunnel**
 - *Exec console* — run commands (optional sudo) on any saved server.
@@ -33,7 +42,8 @@ and dashboard tabs.
 - *Certificates* — list and issue Let's Encrypt certificates via certbot.
 
 **Settings** — everything saved: panel connections, Iran/Kharej servers,
-Cloudflare accounts, and per-server BackPack panel URLs + API tokens.
+Cloudflare accounts, Proton VPN credentials, and per-server BackPack panel
+URLs + API tokens.
 Note: BackPack tokens expire upstream — a 401 means re-minting one in the
 BackPack panel (Settings → Security → API tokens).
 
@@ -55,6 +65,12 @@ frontend `cd frontend && npm install && npm run dev` (`VITE_API_URL=http://local
 - This project: <https://github.com/MohammadHosseinGhorbani/pasarguard-tools>
 - Panel / node: <https://github.com/PasarGuard/panel>, <https://github.com/PasarGuard/node>
 - Tunnels: <https://github.com/AminMGMT/BackPack>
+
+## Project docs
+
+- [docs/upstream.md](docs/upstream.md) — upstream APIs this app depends on,
+  exact versions verified, and fallback behavior.
+- [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md).
 
 ## License
 

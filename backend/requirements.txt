@@ -5,7 +5,7 @@ pydantic
 pydantic-settings
 paramiko
 httpx
-pasarguard>=2.4.0
+pasarguard==2.4.0
 cryptography
 python-jose[cryptography]
 passlib[bcrypt]

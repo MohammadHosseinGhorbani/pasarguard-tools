@@ -1,4 +1,5 @@
-"""Proton VPN: account settings (SRP login) + WireGuard config create/delete/rotate.
+"""Proton VPN: account settings (headless-browser login) + WireGuard config
+create/delete/rotate.
 
 Configs are stored locally (``models.ProtonConfig``) because Proton only
 returns the client private key once, at creation — that is also what powers
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import ProtonAccount, ProtonConfig
+from ..proton_browser import selenium_login
 from ..proton_lib import (
     DEFAULT_APP_VERSION,
     KEY_THROTTLE_SECONDS,
@@ -30,7 +32,6 @@ from ..proton_lib import (
     render_conf,
     resolve_country_list,
     sanitize_config_name,
-    srp_login,
     suggest_outbound_tag,
 )
 from ..schemas import ProtonConfigIn, ProtonLoginIn, ProtonSettingsIn
@@ -100,6 +101,8 @@ def _client_for(db: Session, a: ProtonAccount) -> ProtonClient:
 def _proton_http_error(exc: ProtonError, default_status: int = 502) -> HTTPException:
     """Map a ProtonError to a 400 for client mistakes, 502 for upstream failures."""
     msg = str(exc)
+    if msg.startswith("Could not reach"):
+        return HTTPException(status_code=502, detail=msg)
     client_error = msg.startswith("Not logged in") or msg.startswith("No servers match")
     return HTTPException(status_code=400 if client_error else default_status, detail=msg)
 
@@ -187,7 +190,7 @@ async def login(body: ProtonLoginIn, db: Session = Depends(get_db), _=Depends(ge
     db.commit()
     try:
         sess = await asyncio.to_thread(
-            srp_login,
+            selenium_login,
             username,
             password,
             app_version=a.app_version or DEFAULT_APP_VERSION,
@@ -195,7 +198,7 @@ async def login(body: ProtonLoginIn, db: Session = Depends(get_db), _=Depends(ge
             totp=body.totp or None,
         )
     except ProtonError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _proton_http_error(exc, default_status=400)
     _persist_session(a, sess)
     db.commit()
     db.refresh(a)

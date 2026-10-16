@@ -22,12 +22,12 @@ and dashboard tabs.
   delete, add — then **Save** once.
 
 **Proton VPN**
-- *Configs* — log in with your Proton username/password (SRP, no browser),
-  then create, rotate and delete WireGuard configs: the best free server per
-  country is picked, a fresh certificate is registered and its `.conf` is
-  stored. Rotate deletes the previous certificate and issues a new one.
-  The saved configs feed **Pick from Proton VPN** in the WireGuard outbounds
-  editor.
+- *Configs* — log in with your Proton username/password (a real headless
+  browser, no cookies to copy), then create, rotate and delete WireGuard
+  configs: the best free server per country is picked, a fresh certificate
+  is registered and its `.conf` is stored. Rotate deletes the previous
+  certificate and issues a new one. The saved configs feed **Pick from
+  Proton VPN** in the WireGuard outbounds editor.
 
 **Tunnel**
 - *Exec console* — run commands (optional sudo) on any saved server.

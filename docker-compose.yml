@@ -9,6 +9,8 @@ services:
       DATABASE_URL: sqlite:///./data/app.db
     volumes:
       - ./data:/app/data
+    # Headless Chromium (Proton login) is happier with a bigger /dev/shm.
+    shm_size: "1gb"
     expose:
       - "8000"
 

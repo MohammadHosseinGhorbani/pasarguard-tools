@@ -5,6 +5,7 @@ pydantic
 pydantic-settings
 paramiko
 httpx
+selenium>=4.21
 pasarguard==2.4.0
 cryptography
 python-jose[cryptography]

@@ -53,7 +53,7 @@ class CfAccount(Base):
 
 
 class ProtonAccount(Base):
-    """Single-row Proton VPN account: credentials + SRP session tokens."""
+    """Single-row Proton VPN account: credentials + session tokens."""
 
     __tablename__ = "proton_account"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

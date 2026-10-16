@@ -10,8 +10,9 @@ uses:
   GET    /api/vpn/v1/certificate/all
   DELETE /api/vpn/v1/certificate
 
-Auth is the Proton SRP handshake (username/password, no browser) with a
-refresh token for ~30-day sessions; see ``proton_srp.py``.
+Login is done in a real headless browser (Selenium); see ``proton_browser.py``.
+That yields an ``AUTH-<uid>`` cookie/dashboard session plus, when scraped, the
+RefreshToken for ~30-day sessions (see :func:`refresh_access_token`).
 
 This module holds only pure helpers + a thin sync client. Persistence lives
 in ``models.ProtonAccount`` / ``models.ProtonConfig`` and the HTTP surface in
@@ -34,7 +35,7 @@ import httpx
 # --------------------------------------------------------------------------
 
 PROTON_API_BASE = "https://account.protonvpn.com"
-# The SRP handshake runs on the same host that serves the web dashboard.
+# Login runs on the same host that serves the web dashboard.
 PROTON_AUTH_BASE = "https://account.protonvpn.com"
 # Must match the live web dashboard or the API returns 5003 "web page is out
 # of date". Bump it whenever Proton ships a new dashboard.
@@ -294,10 +295,23 @@ class ProtonSession:
 # --------------------------------------------------------------------------
 
 
+# Connect attempts fail fast so a filtered/blocked network surfaces a clear
+# error well before any reverse-proxy timeout, instead of hanging.
+CONNECT_TIMEOUT = 10.0
+
+
+def _timeout(read: float) -> httpx.Timeout:
+    """Read timeout with a short, separate connect timeout."""
+    try:
+        return httpx.Timeout(read, connect=CONNECT_TIMEOUT)
+    except Exception:
+        return httpx.Timeout(read)
+
+
 def _new_client(*, base: str, timeout: float, proxy: str | None, **kwargs: Any) -> httpx.Client:
     kwargs = {
         "base_url": base.rstrip("/"),
-        "timeout": timeout,
+        "timeout": _timeout(timeout),
         "verify": True,
         # requests followed redirects by default; keep that behavior.
         "follow_redirects": True,
@@ -311,37 +325,24 @@ def _new_client(*, base: str, timeout: float, proxy: str | None, **kwargs: Any) 
     return httpx.Client(**kwargs)
 
 
-def _post_json(client: httpx.Client, path: str, body: dict, *, headers: dict | None = None) -> dict:
-    resp = client.post(path, content=json.dumps(body), headers=headers)
+def _network_error(exc: Exception, where: str = "") -> ProtonError:
+    """A clear, actionable error for a transport failure reaching Proton."""
+    target = f" to {where}" if where else ""
+    return ProtonError(
+        f"Could not reach the Proton API{target} ({type(exc).__name__}: {exc}). "
+        "If this machine is on a filtered network (Proton blocked or DNS "
+        "rewritten), set a proxy in Settings → Proton VPN or run it on an "
+        "unfiltered host."
+    )
+
+
+def _send(client: httpx.Client, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    """Perform an HTTP request, converting transport errors to ProtonError."""
     try:
-        data = resp.json()
-    except ValueError:
-        raise ProtonError(f"Non-JSON response from {path}: HTTP {resp.status_code} {resp.text[:200]}")
-    if not isinstance(data, dict):
-        raise ProtonError(f"Unexpected response from {path}: {str(data)[:200]}")
-    code = data.get("Code", 1000 if resp.status_code == 200 else resp.status_code)
-    if code == 8002:
-        raise ProtonError("Incorrect username or password (8002).")
-    if code == 2028 or data.get("Error") == "APIError":
-        raise ProtonError(
-            "Proton temporarily limited this account (2028, too many recent login "
-            "attempts). Every attempt extends the lockout, so wait several hours "
-            "and then try Login exactly once."
-        )
-    if code == 9001:
-        raise ProtonError(
-            "Proton demands human verification/CAPTCHA (9001), common from "
-            "datacenter/VPN IPs. Sign in once at account.proton.me from a "
-            "residential connection, or set a proxy in the Proton VPN settings."
-        )
-    if resp.status_code == 404:
-        raise ProtonError(f"{path} not found (HTTP 404).")
-    if resp.status_code != 200 or code not in (1000, 1001):
-        raise ProtonError(
-            f"Login request {path} failed: HTTP {resp.status_code} code={data.get('Code')}: "
-            f"{str(data.get('Error', data))[:300]}"
-        )
-    return data
+        return client.request(method, path, **kwargs)
+    except httpx.HTTPError as exc:
+        raise _network_error(exc, f"{str(getattr(client, 'base_url', '') or '')}{path}") from exc
+
 
 
 def _auth_headers(app_version: str) -> dict:
@@ -355,148 +356,6 @@ def _auth_headers(app_version: str) -> dict:
         "Referer": "https://account.protonvpn.com/login",
     }
 
-
-_AUTH_PATHS = {
-    "info": ("/api/core/v4/auth/info", "/api/auth/info"),
-    "auth": ("/api/core/v4/auth", "/api/auth"),
-    "2fa": ("/api/core/v4/auth/2fa", "/api/auth/2fa"),
-}
-
-
-def _post_auth(client: httpx.Client, which: str, body: dict, headers: dict) -> dict:
-    last: Exception | None = None
-    for path in _AUTH_PATHS[which]:
-        try:
-            return _post_json(client, path, body, headers=headers)
-        except ProtonError as e:
-            if "HTTP 404" in str(e):
-                last = e
-                continue
-            raise
-    raise last or ProtonError(f"Auth endpoint {which} not found on this API host.")
-
-
-def _uid_from_cookies(client: httpx.Client) -> str:
-    try:
-        for cookie in client.cookies.jar:
-            name = getattr(cookie, "name", "")
-            if name.startswith("AUTH-") and len(name) > 5 and bool(getattr(cookie, "value", "")):
-                return name[len("AUTH-"):]
-    except Exception:
-        pass
-    return ""
-
-
-def _bootstrap_session(client: httpx.Client, headers: dict) -> tuple[str, dict]:
-    """Create the anonymous session the dashboard holds before login."""
-    h = dict(headers)
-    h["x-enforce-unauthsession"] = "true"
-    data = _post_json(client, "/api/auth/v4/sessions", {}, headers=h)
-    uid = str(data.get("UID", "") or "") or _uid_from_cookies(client)
-    return uid, data
-
-
-SUPPORTED_AUTH_VERSIONS = (3, 4)
-
-
-def srp_login(
-    username: str,
-    password: str,
-    *,
-    app_version: str = DEFAULT_APP_VERSION,
-    base: str = PROTON_API_BASE,
-    auth_base: str = PROTON_AUTH_BASE,
-    timeout: float = 30.0,
-    totp: str | None = None,
-    proxy: str | None = None,
-) -> ProtonSession:
-    """Full SRP handshake; returns an unsaved :class:`ProtonSession`."""
-    from .proton_srp import SrpClient, extract_modulus
-
-    username = (username or "").strip()
-    if not username or not password:
-        raise ProtonError("Username and password are required to log in.")
-
-    headers = _auth_headers(app_version)
-    with _new_client(base=auth_base, timeout=timeout, proxy=proxy) as client:
-        anon_uid, anon_data = _bootstrap_session(client, headers)
-        if anon_uid:
-            headers["x-pm-uid"] = anon_uid
-        anon_token = str(anon_data.get("AccessToken", "") or "")
-        if anon_token:
-            token_type = str(anon_data.get("TokenType", "") or "Bearer")
-            headers["Authorization"] = f"{token_type} {anon_token}"
-
-        info = _post_auth(client, "info", {"Username": username, "Intent": "Auto"}, headers)
-        rotated = _uid_from_cookies(client)
-        if rotated and rotated != headers.get("x-pm-uid"):
-            headers["x-pm-uid"] = rotated
-
-        version = int(info.get("Version", 4))
-        if version not in SUPPORTED_AUTH_VERSIONS:
-            raise ProtonError(
-                f"Unsupported SRP auth version {version} (support 3/4). "
-                "Legacy 2-password accounts must switch to single-password mode first."
-            )
-        try:
-            modulus = extract_modulus(info["Modulus"])
-            salt = base64.b64decode(info["Salt"])
-            server_eph = base64.b64decode(info["ServerEphemeral"])
-            srp_session = info["SRPSession"]
-        except KeyError as e:
-            raise ProtonError(f"/auth/info response missing field: {e}") from e
-        except Exception as e:
-            raise ProtonError(f"Could not parse /auth/info response: {e}") from e
-
-        client_srp = SrpClient(password, modulus)
-        try:
-            proof = client_srp.answer_challenge(salt, server_eph)
-        except ValueError as e:
-            raise ProtonError(f"SRP challenge failed: {e}") from e
-
-        auth = _post_auth(
-            client,
-            "auth",
-            {
-                "Username": username,
-                "ClientEphemeral": base64.b64encode(client_srp.public_challenge).decode(),
-                "ClientProof": base64.b64encode(proof).decode(),
-                "SRPSession": srp_session,
-                "PersistentCookies": 1,
-            },
-            headers,
-        )
-        try:
-            server_proof = base64.b64decode(auth["ServerProof"])
-        except KeyError as e:
-            raise ProtonError(f"/auth response missing ServerProof (keys: {sorted(auth)})") from e
-        if not client_srp.verify(server_proof):
-            raise ProtonError("Server proof mismatch — wrong password or connection tampering.")
-
-        if auth.get("TwoFactor"):
-            twofa = auth.get("2FA", {}) or {}
-            if not twofa.get("TOTP"):
-                raise ProtonError("Account needs FIDO2/WebAuthn 2FA; only TOTP is supported here.")
-            if not totp:
-                raise ProtonError("Account needs a TOTP 2FA code — provide one and try again.")
-            auth_headers = dict(headers)
-            auth_headers["x-pm-uid"] = auth.get("UID", "")
-            if auth.get("AccessToken"):
-                auth_headers["Authorization"] = f"Bearer {auth['AccessToken']}"
-            _post_auth(client, "2fa", {"TwoFactorCode": totp}, auth_headers)
-
-    now = time.time()
-    return ProtonSession(
-        uid=str(auth.get("UID", "")),
-        access_token=str(auth.get("AccessToken", "")),
-        refresh_token=str(auth.get("RefreshToken", "")),
-        session_id=str(auth.get("SessionID", auth.get("SessionId", auth.get("Session-Id", ""))) or ""),
-        app_version=app_version,
-        obtained_at=now,
-        expires_in=int(auth.get("ExpiresIn", DEFAULT_EXPIRES_IN) or DEFAULT_EXPIRES_IN),
-        username=username,
-        auth_base=auth_base,
-    )
 
 
 def refresh_access_token(
@@ -527,13 +386,12 @@ def refresh_access_token(
         with _new_client(base=host, timeout=timeout, proxy=proxy) as client:
             for path in paths:
                 try:
-                    resp = client.post(path, content=json.dumps(body), headers=headers)
+                    resp = _send(client, "POST", path, content=json.dumps(body), headers=headers)
                     payload = resp.json()
+                except ProtonError as e:  # transport failure -> unreachable, stop trying
+                    raise e
                 except ValueError as e:
                     last = ProtonError(f"Non-JSON refresh response from {host}{path}: {e}")
-                    continue
-                except Exception as e:  # network error -> try next
-                    last = e
                     continue
                 if resp.status_code == 404:
                     last = ProtonError(f"{host}{path} not found")
@@ -632,11 +490,15 @@ class ProtonClient:
             raise ProtonError(f"Proton API error {data.get('Code')}: {data.get('Error', data)}")
         return data
 
+    def _req(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Request via the shared transport, mapping network errors clearly."""
+        return _send(self._client, method, path, **kwargs)
+
     # -- servers --
     def get_logicals(self) -> list[dict]:
-        resp = self._client.get("/api/vpn/logicals")
+        resp = self._req("GET", "/api/vpn/logicals")
         if resp.status_code == 404:
-            resp = self._client.get("/api/vpn/v1/logicals")
+            resp = self._req("GET", "/api/vpn/v1/logicals")
         data = self._check(resp)
         servers = data.get("LogicalServers", [])
         if not servers and "Servers" in data:
@@ -646,7 +508,7 @@ class ProtonClient:
     # -- keys / certificates --
     def get_ec_keypair(self) -> tuple[str, str, str]:
         """Return (private_pem_full, public_b64_body, private_b64_body)."""
-        resp = self._client.get("/api/vpn/v1/certificate/key/EC")
+        resp = self._req("GET", "/api/vpn/v1/certificate/key/EC")
         data = self._check(resp)
         try:
             priv_pem = data["PrivateKey"]
@@ -682,7 +544,8 @@ class ProtonClient:
                 "NetShieldLevel": 0,
             },
         }
-        resp = self._client.post(
+        resp = self._req(
+            "POST",
             "/api/vpn/v1/certificate",
             content=json.dumps(body),
             headers=self._headers({"Content-Type": "application/json"}),
@@ -690,12 +553,13 @@ class ProtonClient:
         return self._check(resp)
 
     def list_configs(self) -> list[dict]:
-        resp = self._client.get(
+        resp = self._req(
+            "GET",
             "/api/vpn/v1/certificate/all",
             params={"Mode": "persistent", "Offset": 0, "Limit": 100},
         )
         if resp.status_code == 404:
-            resp = self._client.get("/api/vpn/v1/certificate")
+            resp = self._req("GET", "/api/vpn/v1/certificate")
         data = self._check(resp)
         for key in ("Certificates", "Certificate", "Configs", "Devices"):
             if isinstance(data.get(key), list):
@@ -705,7 +569,7 @@ class ProtonClient:
         return []
 
     def delete_config_by_serial(self, serial: str) -> int:
-        resp = self._client.request(
+        resp = self._req(
             "DELETE",
             "/api/vpn/v1/certificate",
             content=json.dumps({"SerialNumber": serial}),

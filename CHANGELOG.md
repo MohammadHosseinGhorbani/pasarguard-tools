@@ -4,8 +4,9 @@
 
 - Proton VPN: new top-level **Proton VPN** section to create, rotate and
   delete WireGuard configs (best free server per country). Credentials live
-  in a new **Settings → Proton VPN** tab (SRP username/password login with a
-  ~30-day auto-refreshing session, optional proxy, app-version override).
+  in a new **Settings → Proton VPN** tab; login drives a real headless
+  Chromium (Selenium) in the backend and stores a ~30-day auto-refreshing
+  session, with optional proxy and app-version override.
 - Panel: the WireGuard outbounds editor gains a **Pick from Proton VPN**
   button per outbound that fills the config from a saved Proton config.
 

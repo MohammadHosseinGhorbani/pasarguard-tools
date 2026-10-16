@@ -10,7 +10,7 @@ import {
 } from '../api';
 import ResultBlock from './ResultBlock';
 
-// The "Proton VPN" setting: credentials + SRP session for the Proton account
+// The "Proton VPN" setting: credentials + session for the Proton account
 // whose WireGuard configs the Proton VPN section creates/rotates.
 export default function ProtonSettings() {
   const [status, setStatus] = useState<ProtonStatus | null>(null);
@@ -177,9 +177,12 @@ export default function ProtonSettings() {
           </label>
         </div>
         <div className="muted" style={{ marginTop: 8 }}>
-          Login uses the Proton SRP handshake (no browser) and stores a refresh token
-          (~30-day session, auto-refreshed). Credentials are stored on this server —
-          use it only on a machine you trust.
+          Login drives a real headless Chromium (Selenium) in the backend — the same
+          page you would use in a browser — then stores the session and, when it can
+          scrape it, a refresh token (~30-day session, auto-refreshed). It takes a
+          few seconds and may hit Proton's CAPTCHA: this runs headless on the server,
+          so if that happens sign in once manually or set a proxy. Credentials are
+          stored on this server — use it only on a machine you trust.
         </div>
         <div className="row" style={{ marginTop: 12 }}>
           <button className="btn" disabled={!!busy} onClick={save}>

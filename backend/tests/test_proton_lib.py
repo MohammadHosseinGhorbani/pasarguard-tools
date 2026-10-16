@@ -1,10 +1,9 @@
-"""proton_lib: wireguard rendering, picker/country logic and SRP primitives."""
+"""proton_lib: wireguard rendering, picker/country logic and the HTTP client."""
 import base64
 import hashlib
 
 import pytest
 
-from app import proton_srp
 from app.proton_lib import (
     DEFAULT_APP_VERSION,
     ProtonError,
@@ -111,41 +110,14 @@ def test_session_refresh_window():
     assert not s.needs_refresh(now=1000.0 + 29 * 24 * 3600)  # cookie mode never refreshes
 
 
-def test_srp_primitives():
-    assert len(proton_srp.expanded_hash(b"x")) == 256
-    modulus = bytes(range(256))
-    b64 = base64.b64encode(modulus).decode()
-    assert proton_srp.extract_modulus(b64) == modulus
-    n = 123456789
-    assert proton_srp.int_from_le(proton_srp.int_to_le(n)) == n
+def test_srp_primitives_removed():
+    """The SRP login path is gone; only the Selenium (browser) login remains."""
+    import importlib
 
-
-def test_srp_round_trip_matches():
-    """Simulate a server: verifier v = g^x, B = g^b, check the client proof."""
-    modulus = int.from_bytes(bytes(range(256)), "little")
-    modulus_le = proton_srp.int_to_le(modulus)
-    salt = bytes(range(16))
-    password = "hunter2"
-    x = proton_srp.int_from_le(proton_srp.hash_password(password.encode(), salt, modulus_le))
-    v = pow(proton_srp.GENERATOR, x, modulus)
-
-    client = proton_srp.SrpClient(password, modulus_le)
-    b = proton_srp.random_int(32)
-    k = proton_srp.hash_ints(
-        proton_srp.int_to_le(proton_srp.GENERATOR), modulus_le
-    )
-    server_pub = (k * v + pow(proton_srp.GENERATOR, b, modulus)) % modulus
-    proof = client.answer_challenge(salt, proton_srp.int_to_le(server_pub))
-
-    # Server-side expectation of M = H(A, B, S)
-    a = proton_srp.int_from_le(client.public_challenge)
-    u = proton_srp.hash_ints(proton_srp.int_to_le(a), proton_srp.int_to_le(server_pub))
-    s = pow(a * pow(v, u, modulus), b, modulus)
-    exp = proton_srp._Expander()
-    exp.update(proton_srp.int_to_le(a))
-    exp.update(proton_srp.int_to_le(server_pub))
-    exp.update(proton_srp.int_to_le(s))
-    assert proof == exp.digest()
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.proton_srp")
+    from app import proton_lib
+    assert not hasattr(proton_lib, "srp_login")
 
 
 def _mock_client(monkeypatch, handler):
@@ -218,3 +190,17 @@ def test_proton_client_reports_stale_app_version(monkeypatch):
         with pytest.raises(ProtonError, match="stale app version"):
             client.get_logicals()
     assert seen  # request was made
+
+
+def test_send_maps_network_errors_to_proton_error():
+    import httpx
+
+    from app.proton_lib import ProtonError, _send
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    transport = httpx.MockTransport(boom)
+    with httpx.Client(transport=transport, base_url="https://account.protonvpn.com") as c:
+        with pytest.raises(ProtonError, match="Could not reach the Proton API"):
+            _send(c, "GET", "/api/vpn/logicals")

@@ -45,23 +45,34 @@ the code degrades when shapes drift. When touching any of these, update the
 ## Proton VPN
 
 - Upstream: Proton `account.protonvpn.com` API (the same one the web
-  dashboard uses), ported from the `proton-switcher` project into
-  `backend/app/proton_lib.py` + `backend/app/proton_srp.py`.
+  dashboard uses). The config/rotation logic is ported from the
+  `proton-switcher` project into `backend/app/proton_lib.py`; the login is
+  ported into `backend/app/proton_browser.py`.
 - Endpoints: `GET /api/vpn/logicals`, `GET /api/vpn/v1/certificate/key/EC`,
   `POST /api/vpn/v1/certificate`, `GET /api/vpn/v1/certificate/all`,
   `DELETE /api/vpn/v1/certificate`.
-- Auth is the SRP-6a handshake (`/api/core/v4/auth/info` → `/auth`, with the
-  unversioned `/api/auth/*` fallback) plus `POST /api/auth/refresh` for
-  auto-refresh when <7 days remain. No browser/Selenium.
+- Auth is a **real headless Chromium (Selenium)** driving
+  `https://account.protonvpn.com/login` — the same page a user would use —
+  because a hand-rolled SRP-over-HTTP handshake trips Proton's bot defenses
+  (2028 rate-limit, 9001 human-verification) due to its TLS/JS fingerprint.
+  The login returns an `AUTH-<uid>` session and, scraped from the browser
+  performance logs, the RefreshToken; `POST /api/auth/refresh` keeps the
+  ~30-day session alive (refreshed when <7 days remain).
+- Chromium + its driver are installed in `backend/Dockerfile`; Selenium is
+  pointed at them via the `PROTON_CHROME_BINARY` / `PROTON_CHROMEDRIVER`
+  env vars (no Selenium-Manager download at runtime).
 - Version-sensitive bits:
   - `x-pm-appversion` (`DEFAULT_APP_VERSION`) must match the live dashboard or
     the API answers `5003` "web page is out of date" — bump it when it breaks.
   - Login is rate-limited (`2028`) and CAPTCHA-gated (`9001`) from datacenter
-    IPs; set the per-account **proxy** in Settings → Proton VPN on filtered
-    networks. The client uses `httpx` (already a dependency), not `requests`.
+    IPs. The backend is **headless**, so a CAPTCHA cannot be solved in the
+    app: sign in once manually or set the per-account **proxy** in
+    Settings → Proton VPN.
   - Certificate creation is throttled (`KEY_THROTTLE_SECONDS`, 5s) between
     key-gen and register. Free servers are `Tier == 0`; best = lowest
     `Score`, tie-break lowest `Load`.
+- Logins can take up to ~120s (browser + redirects), so the nginx front end
+  raises `proxy_read_timeout` to 300s (`frontend/nginx.conf`) to avoid a 504.
 - The client private key is only returned once, at creation, so each config
   is persisted (`models.ProtonConfig`) and its `.conf` re-rendered from it.
 
